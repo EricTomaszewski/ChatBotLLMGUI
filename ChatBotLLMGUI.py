@@ -1,6 +1,9 @@
 import streamlit as st
 import requests
 import time
+import json
+import uuid
+import os
 
 # --- CONFIGURATION (Or use the Sidebar in the UI) ---
 # You can hardcode these if you don't want to paste them every time
@@ -15,8 +18,6 @@ BASE_URL = "http://localhost:3001"
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="AnythingLLM Chat", page_icon="🤖")
-st.title("🤖 Local AI Chat")
-st.caption("Powered by AnythingLLM")
 
 # --- HELPER: API KEY MASKING ---
 def mask_api_key(key):
@@ -26,8 +27,75 @@ def mask_api_key(key):
         return key
     return "*" * (len(key) - 4) + key[-4:]
 
-# --- SIDEBAR SETTINGS ---
+# --- HELPER: CHAT PERSISTENCE ---
+CHAT_HISTORY_FILE = "chat_history.json"
+
+def load_chats():
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+def save_chats(chats):
+    with open(CHAT_HISTORY_FILE, "w") as f:
+        json.dump(chats, f, indent=4)
+
+# --- SESSION STATE (MEMORY) ---
+if "chats" not in st.session_state:
+    st.session_state.chats = load_chats()
+
+if not st.session_state.chats:
+    # Create a default new chat if none exist
+    new_chat_id = str(uuid.uuid4())
+    st.session_state.chats[new_chat_id] = {
+        "title": "New Chat",
+        "messages": []
+    }
+    st.session_state.current_chat_id = new_chat_id
+elif "current_chat_id" not in st.session_state:
+    # Default to the most recently created/updated chat (simplification: just first key)
+    # Ideally, we'd sort by timestamp, but keys are unordered. Let's pick the last key or random.
+    st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
+
+# --- SIDEBAR: CHAT HISTORY & SETTINGS ---
 with st.sidebar:
+    st.title("💬 Chat History")
+
+    if st.button("➕ New Chat", use_container_width=True):
+        new_chat_id = str(uuid.uuid4())
+        st.session_state.chats[new_chat_id] = {
+            "title": "New Chat",
+            "messages": []
+        }
+        st.session_state.current_chat_id = new_chat_id
+        save_chats(st.session_state.chats)
+        st.rerun()
+
+    st.markdown("---")
+
+    # Display existing chats
+    # We'll display them in reverse order of creation (assuming dict preserves insertion order in modern Python)
+    # or we could add a timestamp field. For now, just listing keys.
+    chat_ids = list(st.session_state.chats.keys())
+    # Reverse to show newest at bottom? Or top? Usually newest at top.
+    # If we want newest at top, we need to handle that.
+    # Let's just iterate.
+
+    for chat_id in reversed(chat_ids):
+        chat = st.session_state.chats[chat_id]
+        title = chat.get("title", "New Chat")
+
+        # Using columns to create a "Button" look or just simple buttons
+        # The key must be unique per button
+        if st.button(title, key=f"chat_btn_{chat_id}", use_container_width=True,
+                     type="primary" if chat_id == st.session_state.current_chat_id else "secondary"):
+            st.session_state.current_chat_id = chat_id
+            st.rerun()
+
+    st.markdown("---")
     st.header("Settings")
 
     # Initialize session state for API key
@@ -48,17 +116,25 @@ with st.sidebar:
 
     slug = st.text_input("Workspace Slug", value=DEFAULT_WORKSPACE_SLUG)
     mode = st.radio("Mode", ["chat", "query"], index=0, help="'Query' uses only your documents. 'Chat' uses general knowledge + docs.")
-    if st.button("Clear Chat History"):
-        st.session_state.messages = []
+
+    if st.button("🗑️ Clear All Chats"):
+        st.session_state.chats = {}
+        new_chat_id = str(uuid.uuid4())
+        st.session_state.chats[new_chat_id] = {"title": "New Chat", "messages": []}
+        st.session_state.current_chat_id = new_chat_id
+        save_chats(st.session_state.chats)
         st.rerun()
 
-# --- SESSION STATE (MEMORY) ---
-# This keeps the chat history alive while the app is running
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# --- MAIN PAGE ---
+st.title("🤖 Local AI Chat")
+st.caption("Powered by AnythingLLM")
+
+# Get current chat
+current_chat = st.session_state.chats[st.session_state.current_chat_id]
+messages = current_chat["messages"]
 
 # --- DISPLAY CHAT HISTORY ---
-for message in st.session_state.messages:
+for message in messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
@@ -71,9 +147,22 @@ def stream_text(text):
 
 # --- MAIN CHAT LOGIC ---
 if prompt := st.chat_input("Message AnythingLLM..."):
+    # 0. Update title if it's the first message
+    if len(messages) == 0:
+        # Simple title generation: First 30 chars of prompt
+        new_title = prompt[:30] + ("..." if len(prompt) > 30 else "")
+        current_chat["title"] = new_title
+        save_chats(st.session_state.chats)
+        # Rerun to update the sidebar title instantly?
+        # Rerunning might interrupt the flow. Let's rely on next interaction or force update sidebar somehow?
+        # Streamlit sidebar updates require a rerun usually.
+        # We can accept that the title updates on the NEXT interaction, or force a rerun but that clears the input.
+        # Let's just update the state and save.
+
     # 1. Display user message immediately
     st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": prompt})
+    save_chats(st.session_state.chats)
 
     # 2. Prepare API Request
     endpoint = f"{BASE_URL}/api/v1/workspace/{slug}/chat"
@@ -121,4 +210,5 @@ if prompt := st.chat_input("Message AnythingLLM..."):
             full_response = error_msg
 
     # 4. Save Assistant Response to History
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    messages.append({"role": "assistant", "content": full_response})
+    save_chats(st.session_state.chats)

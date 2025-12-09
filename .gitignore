@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+chat_history.json
+streamlit_log.txt

@@ -18,10 +18,34 @@ st.set_page_config(page_title="AnythingLLM Chat", page_icon="🤖")
 st.title("🤖 Local AI Chat")
 st.caption("Powered by AnythingLLM")
 
+# --- HELPER: API KEY MASKING ---
+def mask_api_key(key):
+    if not key:
+        return ""
+    if len(key) <= 4:
+        return key
+    return "*" * (len(key) - 4) + key[-4:]
+
 # --- SIDEBAR SETTINGS ---
 with st.sidebar:
     st.header("Settings")
-    api_key = st.text_input("API Key", value=DEFAULT_API_KEY, type="password")
+
+    # Initialize session state for API key
+    if "real_api_key" not in st.session_state:
+        st.session_state.real_api_key = DEFAULT_API_KEY
+
+    # Initialize input field value
+    if "api_key_input" not in st.session_state:
+        st.session_state.api_key_input = mask_api_key(st.session_state.real_api_key)
+
+    def update_api_key():
+        new_val = st.session_state.api_key_input
+        st.session_state.real_api_key = new_val
+        st.session_state.api_key_input = mask_api_key(new_val)
+
+    st.text_input("API Key", key="api_key_input", on_change=update_api_key, help="Enter your API Key. It will be masked.")
+    api_key = st.session_state.real_api_key
+
     slug = st.text_input("Workspace Slug", value=DEFAULT_WORKSPACE_SLUG)
     mode = st.radio("Mode", ["chat", "query"], index=0, help="'Query' uses only your documents. 'Chat' uses general knowledge + docs.")
     if st.button("Clear Chat History"):

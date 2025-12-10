@@ -62,40 +62,6 @@ elif "current_chat_id" not in st.session_state:
 
 # --- SIDEBAR: CHAT HISTORY & SETTINGS ---
 with st.sidebar:
-    st.title("💬 Chat History")
-
-    if st.button("➕ New Chat", use_container_width=True):
-        new_chat_id = str(uuid.uuid4())
-        st.session_state.chats[new_chat_id] = {
-            "title": "New Chat",
-            "messages": []
-        }
-        st.session_state.current_chat_id = new_chat_id
-        save_chats(st.session_state.chats)
-        st.rerun()
-
-    st.markdown("---")
-
-    # Display existing chats
-    # We'll display them in reverse order of creation (assuming dict preserves insertion order in modern Python)
-    # or we could add a timestamp field. For now, just listing keys.
-    chat_ids = list(st.session_state.chats.keys())
-    # Reverse to show newest at bottom? Or top? Usually newest at top.
-    # If we want newest at top, we need to handle that.
-    # Let's just iterate.
-
-    for chat_id in reversed(chat_ids):
-        chat = st.session_state.chats[chat_id]
-        title = chat.get("title", "New Chat")
-
-        # Using columns to create a "Button" look or just simple buttons
-        # The key must be unique per button
-        if st.button(title, key=f"chat_btn_{chat_id}", use_container_width=True,
-                     type="primary" if chat_id == st.session_state.current_chat_id else "secondary"):
-            st.session_state.current_chat_id = chat_id
-            st.rerun()
-
-    st.markdown("---")
     st.header("Settings")
 
     # Initialize session state for API key
@@ -124,6 +90,35 @@ with st.sidebar:
         st.session_state.current_chat_id = new_chat_id
         save_chats(st.session_state.chats)
         st.rerun()
+
+    st.markdown("---")
+    st.title("💬 Chat History")
+
+    if st.button("➕ New Chat", use_container_width=True):
+        new_chat_id = str(uuid.uuid4())
+        st.session_state.chats[new_chat_id] = {
+            "title": "New Chat",
+            "messages": []
+        }
+        st.session_state.current_chat_id = new_chat_id
+        save_chats(st.session_state.chats)
+        st.rerun()
+
+    # Display existing chats
+    # We'll display them in reverse order of creation (assuming dict preserves insertion order in modern Python)
+    # or we could add a timestamp field. For now, just listing keys.
+    chat_ids = list(st.session_state.chats.keys())
+
+    for chat_id in reversed(chat_ids):
+        chat = st.session_state.chats[chat_id]
+        title = chat.get("title", "New Chat")
+
+        # Using columns to create a "Button" look or just simple buttons
+        # The key must be unique per button
+        # NOTE: Removed type="primary" to eliminate the 'Red Button' confusion as requested.
+        if st.button(title, key=f"chat_btn_{chat_id}", use_container_width=True):
+            st.session_state.current_chat_id = chat_id
+            st.rerun()
 
 # --- MAIN PAGE ---
 st.title("🤖 Local AI Chat")

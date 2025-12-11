@@ -83,18 +83,52 @@ with st.sidebar:
     slug = st.text_input("Workspace Slug", value=DEFAULT_WORKSPACE_SLUG)
     mode = st.radio("Mode", ["chat", "query"], index=0, help="'Query' uses only your documents. 'Chat' uses general knowledge + docs.")
 
+    @st.dialog("Delete Chat?")
+    def delete_chat_dialog(chat_id_to_delete):
+        st.write("Are you sure you want to delete this chat?")
+        col1, col2 = st.columns(2)
+        if col1.button("Cancel", use_container_width=True):
+            st.rerun()
+        if col2.button("Delete", use_container_width=True, type="primary"):
+            del st.session_state.chats[chat_id_to_delete]
+
+            # If deleted current chat, switch to another
+            if chat_id_to_delete == st.session_state.current_chat_id:
+                if st.session_state.chats:
+                    st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
+                else:
+                    new_id = str(uuid.uuid4())
+                    st.session_state.chats[new_id] = {"title": "New Chat", "messages": []}
+                    st.session_state.current_chat_id = new_id
+
+            save_chats(st.session_state.chats)
+            st.rerun()
+
+    @st.dialog("Clear All Chats?")
+    def clear_all_chats_dialog():
+        st.write("Are you sure you want to delete ALL chats? This cannot be undone.")
+        col1, col2 = st.columns(2)
+        if col1.button("Cancel", use_container_width=True):
+            st.rerun()
+        if col2.button("Delete All", use_container_width=True, type="primary"):
+            st.session_state.chats = {}
+            new_chat_id = str(uuid.uuid4())
+            st.session_state.chats[new_chat_id] = {"title": "New Chat", "messages": []}
+            st.session_state.current_chat_id = new_chat_id
+            save_chats(st.session_state.chats)
+            st.rerun()
+
     if st.button("🗑️ Clear All Chats"):
-        st.session_state.chats = {}
-        new_chat_id = str(uuid.uuid4())
-        st.session_state.chats[new_chat_id] = {"title": "New Chat", "messages": []}
-        st.session_state.current_chat_id = new_chat_id
-        save_chats(st.session_state.chats)
-        st.rerun()
+        clear_all_chats_dialog()
 
     st.markdown("---")
     st.title("💬 Chat History")
 
-    if st.button("➕ New Chat", use_container_width=True):
+    # Check if current chat is empty to disable "New Chat"
+    current_chat_obj = st.session_state.chats.get(st.session_state.current_chat_id)
+    is_current_empty = len(current_chat_obj["messages"]) == 0 if current_chat_obj else True
+
+    if st.button("➕ New Chat", use_container_width=True, disabled=is_current_empty):
         new_chat_id = str(uuid.uuid4())
         st.session_state.chats[new_chat_id] = {
             "title": "New Chat",
@@ -114,11 +148,16 @@ with st.sidebar:
         title = chat.get("title", "New Chat")
 
         # Using columns to create a "Button" look or just simple buttons
-        # The key must be unique per button
-        # NOTE: Removed type="primary" to eliminate the 'Red Button' confusion as requested.
-        if st.button(title, key=f"chat_btn_{chat_id}", use_container_width=True):
+        col1, col2 = st.columns([0.85, 0.15])
+
+        # Select Chat Button
+        if col1.button(title, key=f"chat_btn_{chat_id}", use_container_width=True):
             st.session_state.current_chat_id = chat_id
             st.rerun()
+
+        # Delete Chat Button
+        if col2.button("🗑️", key=f"del_btn_{chat_id}", help="Delete this chat"):
+            delete_chat_dialog(chat_id)
 
 # --- MAIN PAGE ---
 st.title("🤖 Local AI Chat")
